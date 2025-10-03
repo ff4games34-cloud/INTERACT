@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Download, Upload, Plus, Trash2, LogOut, CheckCircle2, Settings, Edit3, User, Users } from "lucide-react";
 import { v4 as uuid } from "uuid";
@@ -309,4 +310,735 @@ export default function App() {
                         student: stu.name,
                         team: stu.team || "",
                         objective: obj.title,
+                        week: obj.weekIndex,
+                        dueDate: fmtDate(obj.dueDate),
+                        status: s && s.status ? s.status : "not_started",
+                        notes: s && s.notes ? s.notes : "",
+                        evidenceUrl: s && s.evidenceUrl ? s.evidenceUrl : "",
+                        extraCount: s && s.extra ? s.extra.length : 0,
+                        extraVerified: s && s.extra ? s.extra.filter((e) => e.verified).length : 0,
+                      };
+                    })
+                  );
+                  downloadFile("htic-progress.csv", toCSV(rows), "text/csv");
+                }}
+              >
+                <Download size={16} /> Export CSV
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  if (!confirm("Reset demo data?")) return;
+                  setState(defaultState());
+                }}
+              >
+                <Trash2 size={16} /> Reset Demo
+              </button>
+              <span className="ml-auto badge">Week {nowWeekIndex}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {role === "guest" && (
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="card p-4">
+              <div className="flex items-center gap-2 font-semibold mb-1">
+                <Users size={16} /> Coordinator / Admin
+              </div>
+              <div className="text-sm text-gray-500 mb-3">Create objectives, track progress, verify extras, export reports.</div>
+              <div className="grid gap-2">
+                <input
+                  type="password"
+                  className="input"
+                  placeholder="Admin passcode"
+                  value={adminPass}
+                  onChange={(e) => setAdminPass(e.target.value)}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    if (adminPass === state.meta.adminPasscode) {
+                      setRole("admin");
+                      alert("Welcome, coordinator!");
+                    } else {
+                      alert("Wrong passcode.");
+                    }
+                  }}
+                >
+                  <CheckCircle2 size={16} /> Continue as Admin
+                </button>
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="flex items-center gap-2 font-semibold mb-1">
+                <User size={16} /> Student
+              </div>
+              <div className="text-sm text-gray-500 mb-3">Update weekly objectives and log extra contributions.</div>
+              <select className="input" value={whoId} onChange={(e) => setWhoId(e.target.value)}>
+                <option value="">Select your name</option>
+                {state.students.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.team ? ` • ${s.team}` : ""}
+                  </option>
+                ))}
+              </select>
+              <button className="btn btn-primary mt-2" disabled={!whoId} onClick={() => setRole("student")}>
+                <CheckCircle2 size={16} /> Continue as Student
+              </button>
+            </div>
+          </div>
+        )}
+
+        {role !== "guest" && (
+          <div className="flex items-center gap-2 mb-4">
+            <button className={`btn ${tab === "overview" ? "btn-primary" : ""}`} onClick={() => setTab("overview")}>
+              Overview
+            </button>
+            {role === "admin" && (
+              <button className={`btn ${tab === "admin" ? "btn-primary" : ""}`} onClick={() => setTab("admin")}>
+                Admin
+              </button>
+            )}
+            {role === "student" && (
+              <button className={`btn ${tab === "student" ? "btn-primary" : ""}`} onClick={() => setTab("student")}>
+                My Tasks
+              </button>
+            )}
+            <button
+              className="btn ml-auto"
+              onClick={() => {
+                setRole("guest");
+                setWhoId("");
+              }}
+            >
+              <LogOut size={16} /> Sign out
+            </button>
+          </div>
+        )}
+
+        {role !== "guest" && tab === "overview" && (
+          <Overview state={state} completionForStudent={completionForStudent} />
+        )}
+        {role === "admin" && tab === "admin" && (
+          <AdminPanel
+            state={state}
+            setState={setState}
+            nowWeekIndex={nowWeekIndex}
+            objectivesByWeek={objectivesByWeek}
+            filteredStudents={filteredStudents}
+            getSubmission={getSubmission}
+            markStatus={markStatus}
+            addExtra={addExtra}
+            verifyExtra={verifyExtra}
+          />
+        )}
+        {role === "student" && tab === "student" && who && (
+          <StudentHome
+            state={state}
+            who={who}
+            setState={setState}
+            getSubmission={getSubmission}
+            markStatus={markStatus}
+            addExtra={addExtra}
+          />
+        )}
+      </main>
+
+      <footer className="pb-10 text-center text-xs text-gray-500">
+        Built for the HTIC Charity Marathon project — back up with Export JSON to share progress across devices.
+      </footer>
+    </div>
+  );
+}
+
+// --- Subcomponents ---
+
+function Overview({ state, completionForStudent }) {
+  const rows = state.students
+    .map((stu) => {
+      const { pct, done, total } = completionForStudent(stu.id);
+      return { ...stu, pct, done, total };
+    })
+    .sort((a, b) => b.pct - a.pct);
+
+  return (
+    <div className="card p-4">
+      <div className="font-semibold mb-1">Overall progress</div>
+      <div className="text-sm text-gray-500 mb-3">Snapshot of each student/team against weekly objectives.</div>
+      <div className="overflow-x-auto">
+        <table className="table w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th>Student</th>
+              <th>Team</th>
+              <th>Done</th>
+              <th>Total</th>
+              <th>Completion</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-b last:border-0">
+                <td>{r.name}</td>
+                <td>{r.team || "—"}</td>
+                <td>{r.done}</td>
+                <td>{r.total}</td>
+                <td>
+                  <div className="progress">
+                    <span style={{ width: `${r.pct}%` }} />
+                  </div>
+                  <div className="text-xs text-gray-500">{r.pct}%</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({
+  state,
+  setState,
+  nowWeekIndex,
+  objectivesByWeek,
+  filteredStudents,
+  getSubmission,
+  markStatus,
+  addExtra,
+  verifyExtra,
+}) {
+  const [newObj, setNewObj] = useState({
+    title: "",
+    details: "",
+    weekIndex: nowWeekIndex,
+    dueDate: new Date().toISOString(),
+  });
+  const [newStu, setNewStu] = useState({ name: "", email: "", team: "" });
+
+  const weeks = [...objectivesByWeek.keys()].sort((a, b) => a - b);
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 card p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-semibold">Weekly objectives</div>
+            <div className="text-sm text-gray-500">Create, edit, and review tasks.</div>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-2 mt-3">
+          <input
+            className="input md:col-span-2"
+            placeholder="Objective title"
+            value={newObj.title}
+            onChange={(e) => setNewObj((o) => ({ ...o, title: e.target.value }))}
+          />
+          <input
+            className="input md:col-span-2"
+            placeholder="Details"
+            value={newObj.details}
+            onChange={(e) => setNewObj((o) => ({ ...o, details: e.target.value }))}
+          />
+          <input
+            type="number"
+            className="input"
+            placeholder="Week"
+            value={newObj.weekIndex}
+            onChange={(e) => setNewObj((o) => ({ ...o, weekIndex: parseInt(e.target.value || "0") }))}
+          />
+          <input
+            type="date"
+            className="input"
+            value={newObj.dueDate.slice(0, 10)}
+            onChange={(e) => setNewObj((o) => ({ ...o, dueDate: new Date(e.target.value).toISOString() }))}
+          />
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              if (!newObj.title.trim()) {
+                alert("Title required");
+                return;
+              }
+              setState((prev) => ({ ...prev, objectives: [...prev.objectives, { id: uuid(), ...newObj }] }));
+              setNewObj({ title: "", details: "", weekIndex: nowWeekIndex, dueDate: new Date().toISOString() });
+            }}
+          >
+            <Plus size={16} /> Add objective
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-6">
+          {weeks.length === 0 && <p className="text-sm text-gray-500">No objectives yet.</p>}
+          {weeks.map((week) => (
+            <div key={week} className="border rounded-2xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">
+                  Week {week} {week === weeksBetween(new Date(state.meta.academicWeekZeroISO), new Date()) && pill("this week")}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {objectivesByWeek.get(week).map((obj) => (
+                  <div key={obj.id} className="border rounded-xl p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{obj.title}</div>
+                        <div className="text-sm text-gray-500">{obj.details}</div>
+                        <div className="text-xs mt-1">Due: {fmtDate(obj.dueDate)}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            const title = prompt("Edit title", obj.title) || obj.title;
+                            const details = prompt("Edit details", obj.details) || obj.details;
+                            const due = prompt("Edit due date (YYYY-MM-DD)", obj.dueDate.slice(0, 10));
+                            setState((prev) => ({
+                              ...prev,
+                              objectives: prev.objectives.map((o) =>
+                                o.id === obj.id ? { ...o, title, details, dueDate: due ? new Date(due).toISOString() : o.dueDate } : o
+                              ),
+                            }));
+                          }}
+                        >
+                          <Edit3 size={16} /> Edit
+                        </button>
+                        <button
+                          className="btn"
+                          onClick={() => {
+                            if (!confirm("Delete objective?")) return;
+                            setState((prev) => ({
+                              ...prev,
+                              objectives: prev.objectives.filter((o) => o.id !== obj.id),
+                              submissions: prev.submissions.filter((s) => s.objectiveId !== obj.id),
+                            }));
+                          }}
+                        >
+                          <Trash2 size={16} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                    <StudentProgressRow
+                      students={state.students}
+                      obj={obj}
+                      getSubmission={getSubmission}
+                      markStatus={markStatus}
+                      verifyExtra={verifyExtra}
+                      addExtra={addExtra}
+                      updateSubmission={updateSubmission}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <div className="card p-4">
+          <div className="font-semibold mb-1">Students</div>
+          <div className="text-sm text-gray-500 mb-2">Add students and group by teams.</div>
+          <div className="grid md:grid-cols-3 gap-2">
+            <input
+              className="input"
+              placeholder="Name"
+              value={newStu.name}
+              onChange={(e) => setNewStu((s) => ({ ...s, name: e.target.value }))}
+            />
+            <input
+              className="input"
+              placeholder="Email"
+              value={newStu.email}
+              onChange={(e) => setNewStu((s) => ({ ...s, email: e.target.value }))}
+            />
+            <input
+              className="input"
+              placeholder="Team (e.g., Logistics)"
+              value={newStu.team}
+              onChange={(e) => setNewStu((s) => ({ ...s, team: e.target.value }))}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (!newStu.name.trim()) {
+                  alert("Name required");
+                  return;
+                }
+                setState((prev) => ({ ...prev, students: [...prev.students, { id: uuid(), ...newStu }] }));
+                setNewStu({ name: "", email: "", team: "" });
+              }}
+            >
+              <Plus size={16} /> Add student
+            </button>
+          </div>
+          <div className="mt-3 grid gap-2">
+            {filteredStudents.map((s) => (
+              <div key={s.id} className="flex items-center justify-between border rounded-xl p-3">
+                <div>
+                  <div className="font-medium">{s.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {s.email} {s.team && `• ${s.team}`}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const name = prompt("Edit name", s.name) || s.name;
+                      const email = prompt("Edit email", s.email || "") || s.email;
+                      const team = prompt("Edit team", s.team || "") || s.team;
+                      setState((prev) => ({
+                        ...prev,
+                        students: prev.students.map((x) => (x.id === s.id ? { ...x, name, email, team } : x)),
+                      }));
+                    }}
+                  >
+                    <Edit3 size={16} /> Edit
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      if (!confirm("Remove student?")) return;
+                      setState((prev) => ({
+                        ...prev,
+                        students: prev.students.filter((x) => x.id !== s.id),
+                        submissions: prev.submissions.filter((sub) => sub.studentId !== s.id),
+                      }));
+                    }}
+                  >
+                    <Trash2 size={16} /> Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <div className="font-semibold mb-1">Reports</div>
+          <div className="grid gap-2">
+            <button
+              className="btn"
+              onClick={() => {
+                const rows = state.students.flatMap((stu) =>
+                  state.objectives.map((obj) => {
+                    const s = state.submissions.find((x) => x.studentId === stu.id && x.objectiveId === obj.id);
+                    return {
+                      student: stu.name,
+                      team: stu.team || "",
+                      objective: obj.title,
+                      week: obj.weekIndex,
+                      dueDate: fmtDate(obj.dueDate),
+                      status: s && s.status ? s.status : "not_started",
+                      notes: s && s.notes ? s.notes : "",
+                      evidenceUrl: s && s.evidenceUrl ? s.evidenceUrl : "",
+                      extraCount: s && s.extra ? s.extra.length : 0,
+                      extraVerified: s && s.extra ? s.extra.filter((e) => e.verified).length : 0,
+                    };
+                  })
+                );
+                downloadFile("htic-progress.csv", toCSV(rows), "text/csv");
+              }}
+            >
+              <Download size={16} /> Export CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StudentProgressRow({ students, obj, getSubmission, markStatus, verifyExtra, addExtra, updateSubmission }) {
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [impact, setImpact] = useState("Low");
+
+  return (
+    <div className="mt-3 space-y-2">
+      {students.map((stu) => {
+        const sub = getSubmission(stu.id, obj.id);
+        return (
+          <div key={stu.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border rounded-xl p-3">
+            <div className="flex items-center gap-2">
+              <span className="badge">{stu.team || "—"}</span>
+              <div className="font-medium">{stu.name}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              {["not_started", "in_progress", "done"].map((v) => (
+                <button
+                  key={v}
+                  className={`btn ${((sub && sub.status) || "not_started") === v ? "btn-primary" : ""}`}
+                  onClick={() => markStatus(stu.id, obj.id, v)}
+                >
+                  {v.replace("_", " ")}
+                </button>
+              ))}
+              <details className="btn">
+                <summary>Details</summary>
+                <div className="p-3 space-y-2">
+                  <input
+                    className="input"
+                    placeholder="Evidence URL"
+                    value={(sub && sub.evidenceUrl) || ""}
+                    onChange={(e) => updateSubmission(stu.id, obj.id, { evidenceUrl: e.target.value })}
+                  />
+                  <textarea
+                    className="textarea"
+                    placeholder="Notes"
+                    value={(sub && sub.notes) || ""}
+                    onChange={(e) => updateSubmission(stu.id, obj.id, { notes: e.target.value })}
+                  />
+                  <div className="border rounded-lg p-2">
+                    <div className="text-sm font-medium mb-1">Extra contributions</div>
+                    {(!sub || !sub.extra || sub.extra.length === 0) && (
+                      <p className="text-sm text-gray-500">No extra items yet.</p>
+                    )}
+                    {sub && sub.extra && sub.extra.map((e) => (
+                      <div key={e.id} className="flex items-start justify-between gap-2 border rounded-lg p-2 mb-1">
+                        <div>
+                          <div className="font-medium">
+                            {e.title} {e.verified && <span className="badge">verified</span>}
+                          </div>
+                          <div className="text-xs text-gray-500">{e.desc}</div>
+                          <div className="text-xs mt-1">Impact: {e.impact}</div>
+                        </div>
+                        <button className="btn" onClick={() => verifyExtra(stu.id, obj.id, e.id, !e.verified)}>
+                          {e.verified ? "Unverify" : "Verify"}
+                        </button>
+                      </div>
+                    ))}
+                    <div className="grid md:grid-cols-3 gap-2 mt-2">
+                      <input className="input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+                      <select className="input" value={impact} onChange={(e) => setImpact(e.target.value)}>
+                        {["Low", "Medium", "High", "Critical"].map((x) => (
+                          <option key={x} value={x}>
+                            {x}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          if (!title.trim()) {
+                            alert("Give the extra a title");
+                            return;
+                          }
+                          addExtra(stu.id, obj.id, { title, desc, impact });
+                          setTitle("");
+                          setDesc("");
+                          setImpact("Low");
+                        }}
+                      >
+                        <Plus size={16} /> Add extra
+                      </button>
+                    </div>
+                    <textarea
+                      className="textarea mt-2"
+                      placeholder="Short description (optional)"
+                      value={desc}
+                      onChange={(e) => setDesc(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StudentHome({ state, who, setState, getSubmission, markStatus, addExtra }) {
+  const completion = (() => {
+    const total = state.objectives.length;
+    const done = state.objectives.filter((o) => {
+      const s = getSubmission(who.id, o.id);
+      return s && s.status === "done";
+    }).length;
+    return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+  })();
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 card p-4">
+        <div className="font-semibold mb-1">Hello, {who.name}</div>
+        <div className="text-sm text-gray-500 mb-2">Update your objectives and log extra contributions.</div>
+
+        <div className="space-y-4">
+          {state.objectives
+            .sort((a, b) => a.weekIndex - b.weekIndex)
+            .map((obj) => {
+              const sub = getSubmission(who.id, obj.id);
+              return (
+                <div key={obj.id} className="border rounded-2xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">
+                        Week {obj.weekIndex}: {obj.title}
+                      </div>
+                      <div className="text-sm text-gray-500">{obj.details}</div>
+                      <div className="text-xs mt-1">Due: {fmtDate(obj.dueDate)}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {["not_started", "in_progress", "done"].map((v) => (
+                        <button
+                          key={v}
+                          className={`btn ${((sub && sub.status) || "not_started") === v ? "btn-primary" : ""}`}
+                          onClick={() => markStatus(who.id, obj.id, v)}
+                        >
+                          {v.replace("_", " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2">
+                    <div className="text-xs font-medium">Evidence URL</div>
+                    <input
+                      className="input"
+                      placeholder="Link to doc/photo/video"
+                      value={(sub && sub.evidenceUrl) || ""}
+                      onChange={(e) => {
+                        const base =
+                          sub ||
+                          {
+                            id: uuid(),
+                            studentId: who.id,
+                            objectiveId: obj.id,
+                            status: "in_progress",
+                            notes: "",
+                            evidenceUrl: "",
+                            extra: [],
+                          };
+                        const newSub = { ...base, evidenceUrl: e.target.value };
+                        setState((prev) => {
+                          const idx = prev.submissions.findIndex((s) => s.id === newSub.id);
+                          const submissions = idx >= 0 ? prev.submissions.map((s, i) => (i === idx ? newSub : s)) : [...prev.submissions, newSub];
+                          return { ...prev, submissions };
+                        });
+                      }}
+                    />
+                    <div className="text-xs font-medium">Notes</div>
+                    <textarea
+                      className="textarea"
+                      rows={3}
+                      placeholder="Any blockers, updates, or context"
+                      value={(sub && sub.notes) || ""}
+                      onChange={(e) => {
+                        const base =
+                          sub ||
+                          {
+                            id: uuid(),
+                            studentId: who.id,
+                            objectiveId: obj.id,
+                            status: "in_progress",
+                            notes: "",
+                            evidenceUrl: "",
+                            extra: [],
+                          };
+                        const newSub = { ...base, notes: e.target.value };
+                        setState((prev) => {
+                          const idx = prev.submissions.findIndex((s) => s.id === newSub.id);
+                          const submissions = idx >= 0 ? prev.submissions.map((s, i) => (i === idx ? newSub : s)) : [...prev.submissions, newSub];
+                          return { ...prev, submissions };
+                        });
+                      }}
+                    />
+                    <div className="mt-2">
+                      <div className="text-sm font-semibold mb-1">Extra contribution</div>
+                      <StudentExtras who={who} obj={obj} getSubmission={getSubmission} addExtra={addExtra} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="text-4xl font-extrabold">{completion.pct}%</div>
+        <div className="text-sm text-gray-500">
+          {completion.done} of {completion.total} objectives marked Done
+        </div>
+        <hr className="sep" />
+        <div className="space-y-2 text-sm">
+          {state.objectives.map((o) => {
+            const s = getSubmission(who.id, o.id);
+            const status = s && s.status ? s.status : "not_started";
+            return (
+              <div key={o.id} className="flex items-center justify-between">
+                <span>
+                  W{o.weekIndex} • {o.title}
+                </span>
+                <span className="text-gray-500">{status}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StudentExtras({ who, obj, getSubmission, addExtra }) {
+  const sub = getSubmission(who.id, obj.id);
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [impact, setImpact] = useState("Low");
+  return (
+    <div className="border rounded-xl p-3">
+      {!sub || !sub.extra || sub.extra.length === 0 ? (
+        <p className="text-sm text-gray-500">No extra items yet.</p>
+      ) : (
+        sub.extra.map((e) => (
+          <div key={e.id} className="border rounded-lg p-2 mb-2">
+            <div className="font-medium">
+              {e.title} {e.verified && <span className="badge">verified</span>}
+            </div>
+            <div className="text-xs text-gray-500">{e.desc}</div>
+            <div className="text-xs mt-1">Impact: {e.impact}</div>
+          </div>
+        ))
+      )}
+      <div className="grid md:grid-cols-3 gap-2 mt-2">
+        <input className="input" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <select className="input" value={impact} onChange={(e) => setImpact(e.target.value)}>
+          {["Low", "Medium", "High", "Critical"].map((x) => (
+            <option key={x} value={x}>
+              {x}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            if (!title.trim()) {
+              alert("Give the extra a title");
+              return;
+            }
+            addExtra(who.id, obj.id, { title, desc, impact });
+            setTitle("");
+            setDesc("");
+            setImpact("Low");
+          }}
+        >
+          <Plus size={16} /> Add extra
+        </button>
+      </div>
+      <textarea
+        className="textarea mt-2"
+        placeholder="Short description (optional)"
+        value={desc}
+        onChange={(e) => setDesc(e.target.value)}
+      />
+    </div>
+  );
+}
