@@ -500,7 +500,6 @@ function Overview({ state, completionForStudent }) {
     </div>
   );
 }
-
 function AdminPanel({
   state,
   setState,
@@ -511,6 +510,7 @@ function AdminPanel({
   markStatus,
   addExtra,
   verifyExtra,
+  updateSubmission,
 }) {
   const [newObj, setNewObj] = useState({
     title: "",
@@ -532,112 +532,79 @@ function AdminPanel({
           </div>
         </div>
 
-        <div className="grid md:grid-cols-4 gap-2 mt-3">
-          <input
-            className="input md:col-span-2"
-            placeholder="Objective title"
-            value={newObj.title}
-            onChange={(e) => setNewObj((o) => ({ ...o, title: e.target.value }))}
-          />
-          <input
-            className="input md:col-span-2"
-            placeholder="Details"
-            value={newObj.details}
-            onChange={(e) => setNewObj((o) => ({ ...o, details: e.target.value }))}
-          />
-          <input
-            type="number"
-            className="input"
-            placeholder="Week"
-            value={newObj.weekIndex}
-            onChange={(e) => setNewObj((o) => ({ ...o, weekIndex: parseInt(e.target.value || "0") }))}
-          />
-          <input
-            type="date"
-            className="input"
-            value={newObj.dueDate.slice(0, 10)}
-            onChange={(e) => setNewObj((o) => ({ ...o, dueDate: new Date(e.target.value).toISOString() }))}
-          />
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              if (!newObj.title.trim()) {
-                alert("Title required");
-                return;
-              }
-              setState((prev) => ({ ...prev, objectives: [...prev.objectives, { id: uuid(), ...newObj }] }));
-              setNewObj({ title: "", details: "", weekIndex: nowWeekIndex, dueDate: new Date().toISOString() });
-            }}
-          >
-            <Plus size={16} /> Add objective
-          </button>
-        </div>
-
+        {/* BEGIN weeks rendering (replace your old block with everything from here…) */}
         <div className="mt-4 space-y-6">
           {weeks.length === 0 && <p className="text-sm text-gray-500">No objectives yet.</p>}
-          {weeks.map((week) => (
-            <div key={week} className="border rounded-2xl p-4">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">
-                  Week {week} {week === weeksBetween(new Date(state.meta.academicWeekZeroISO), new Date()) && pill("this week")}
+          {weeks.map((week) => {
+            const list = objectivesByWeek.get(week) || []; // guard to avoid crashes
+            return (
+              <div key={week} className="border rounded-2xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium">
+                    Week {week} {week === weeksBetween(new Date(state.meta.academicWeekZeroISO), new Date()) && pill("this week")}
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3">
+                  {list.map((obj) => (
+                    <div key={obj.id} className="border rounded-xl p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium">{obj.title}</div>
+                          <div className="text-sm text-gray-500">{obj.details}</div>
+                          <div className="text-xs mt-1">Due: {fmtDate(obj.dueDate)}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            className="btn"
+                            onClick={() => {
+                              const title = prompt("Edit title", obj.title) || obj.title;
+                              const details = prompt("Edit details", obj.details) || obj.details;
+                              const due = prompt("Edit due date (YYYY-MM-DD)", obj.dueDate.slice(0, 10));
+                              setState((prev) => ({
+                                ...prev,
+                                objectives: prev.objectives.map((o) =>
+                                  o.id === obj.id
+                                    ? { ...o, title, details, dueDate: due ? new Date(due).toISOString() : o.dueDate }
+                                    : o
+                                ),
+                              }));
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="btn"
+                            onClick={() => {
+                              if (!confirm("Delete objective?")) return;
+                              setState((prev) => ({
+                                ...prev,
+                                objectives: prev.objectives.filter((o) => o.id !== obj.id),
+                                submissions: prev.submissions.filter((s) => s.objectiveId !== obj.id),
+                              }));
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+
+                      <StudentProgressRow
+                        students={state.students}
+                        obj={obj}
+                        getSubmission={getSubmission}
+                        markStatus={markStatus}
+                        verifyExtra={verifyExtra}
+                        addExtra={addExtra}
+                        updateSubmission={updateSubmission}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="mt-3 grid gap-3">
-                {objectivesByWeek.get(week).map((obj) => (
-                  <div key={obj.id} className="border rounded-xl p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">{obj.title}</div>
-                        <div className="text-sm text-gray-500">{obj.details}</div>
-                        <div className="text-xs mt-1">Due: {fmtDate(obj.dueDate)}</div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            const title = prompt("Edit title", obj.title) || obj.title;
-                            const details = prompt("Edit details", obj.details) || obj.details;
-                            const due = prompt("Edit due date (YYYY-MM-DD)", obj.dueDate.slice(0, 10));
-                            setState((prev) => ({
-                              ...prev,
-                              objectives: prev.objectives.map((o) =>
-                                o.id === obj.id ? { ...o, title, details, dueDate: due ? new Date(due).toISOString() : o.dueDate } : o
-                              ),
-                            }));
-                          }}
-                        >
-                          <Edit3 size={16} /> Edit
-                        </button>
-                        <button
-                          className="btn"
-                          onClick={() => {
-                            if (!confirm("Delete objective?")) return;
-                            setState((prev) => ({
-                              ...prev,
-                              objectives: prev.objectives.filter((o) => o.id !== obj.id),
-                              submissions: prev.submissions.filter((s) => s.objectiveId !== obj.id),
-                            }));
-                          }}
-                        >
-                          <Trash2 size={16} /> Delete
-                        </button>
-                      </div>
-                    </div>
-                    <StudentProgressRow
-                      students={state.students}
-                      obj={obj}
-                      getSubmission={getSubmission}
-                      markStatus={markStatus}
-                      verifyExtra={verifyExtra}
-                      addExtra={addExtra}
-                      updateSubmission={updateSubmission}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {/* …to here END weeks rendering */}
       </div>
 
       <div className="space-y-6">
@@ -699,7 +666,7 @@ function AdminPanel({
                       }));
                     }}
                   >
-                    <Edit3 size={16} /> Edit
+                    Edit
                   </button>
                   <button
                     className="btn"
@@ -712,7 +679,7 @@ function AdminPanel({
                       }));
                     }}
                   >
-                    <Trash2 size={16} /> Remove
+                    Remove
                   </button>
                 </div>
               </div>
@@ -743,7 +710,8 @@ function AdminPanel({
                     };
                   })
                 );
-                downloadFile("htic-progress.csv", toCSV(rows), "text/csv");
+                const csv = toCSV(rows);
+                downloadFile("htic-progress.csv", csv, "text/csv");
               }}
             >
               <Download size={16} /> Export CSV
@@ -754,7 +722,6 @@ function AdminPanel({
     </div>
   );
 }
-
 function StudentProgressRow({ students, obj, getSubmission, markStatus, verifyExtra, addExtra, updateSubmission }) {
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
